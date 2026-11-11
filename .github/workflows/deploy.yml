@@ -1,125 +1,131 @@
-# Deploy do backend na EC2 a cada push na main (ou manual em Actions > Run workflow).
+# Deploy automático (mesmo modelo do professor): Maven -> imagem no Docker Hub -> SSH na EC2 -> docker run
 #
-# Como funciona:
-#   1. build da imagem no runner do GitHub
-#   2. push da imagem para o Docker Hub  (usuario/api-avaliacoes:latest)
-#   3. na EC2 (via SSH): docker pull + docker run
-#
-# Secrets necessários (Settings > Secrets and variables > Actions):
-#   DOCKERHUB_USERNAME  seu usuário do Docker Hub
-#   DOCKERHUB_TOKEN     token do Docker Hub (Account settings > Personal access tokens, Read & Write)
-#   EC2_HOST            IP da máquina (ex.: 13.220.42.157)
-#   EC2_SSH_KEY         conteúdo INTEIRO do arquivo .pem
-#   AUTH0_DOMAIN        ex.: dev-xxxx.us.auth0.com
-#   AUTH0_AUDIENCE      ex.: https://avaliacoes-api
-#   EC2_USER            (opcional, padrão: ubuntu)
+# Secrets (Settings > Secrets and variables > Actions):
+#   DOCKERHUB_TOKEN            token do Docker Hub (Read & Write)
+#   HOST_TEST  (ou EC2_HOST)   IP da EC2
+#   KEY_TEST   (ou EC2_SSH_KEY) conteúdo inteiro do .pem
+#   AUTH0_DOMAIN               ex.: dev-xxxx.us.auth0.com
+#   AUTH0_AUDIENCE             ex.: https://avaliacoes-api
 
-name: Deploy backend na AWS
+name: Deploy automatico
 
 on:
   push:
-    branches: [main]
-    paths-ignore: ["**.md"]   # mudar só o README não faz deploy
+    branches: ["main"]
+    paths-ignore: ["**.md"]          # mudar só o README não faz deploy
   workflow_dispatch:
     inputs:
       apagar_banco:
-        description: "Apagar o banco antes de subir (use quando mudar os campos da entidade)"
+        description: "Apagar o banco (todas as tabelas) antes de subir"
         type: boolean
         default: false
 
-# ⭐ Nome da imagem no Docker Hub, nome do container e portas (docker run -p 8080:8000)
+# ⭐ Mude para o seu usuário do Docker Hub
 env:
-  IMAGE_NAME: api-avaliacoes
-  CONTAINER: api
-  PORTA_EXTERNA: "8080"
-  PORTA_INTERNA: "8000"
+  DOCKER_IMAGE: nadertaha06/api-avaliacoes
+  CONTAINER_NAME: api
+  DOCKER_USER: nadertaha06
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      EC2_HOST: ${{ secrets.EC2_HOST }}
-      EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
-      AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
-      AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
-      APAGAR_BANCO: ${{ inputs.apagar_banco || false }}
 
     steps:
-      - name: Baixar o código
-        uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Conferir secrets
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKER_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
         env:
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          faltando=""
-          for nome in DOCKERHUB_USERNAME DOCKERHUB_TOKEN EC2_HOST EC2_SSH_KEY AUTH0_DOMAIN AUTH0_AUDIENCE; do
-            [ -z "${!nome}" ] && faltando="$faltando $nome"
-          done
-          if [ -n "$faltando" ]; then echo "::error::Secrets faltando:$faltando"; exit 1; fi
-          # Nome completo da imagem: usuario/api-avaliacoes:latest
-          echo "IMAGE=$DOCKERHUB_USERNAME/$IMAGE_NAME:latest" >> "$GITHUB_ENV"
-
-      - name: Login no Docker Hub
-        run: echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-
-      - name: Build da imagem
-        run: docker build -t "$IMAGE" .
-
-      - name: Push para o Docker Hub
-        run: docker push "$IMAGE"
-
-      - name: Configurar SSH
-        env:
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2.pem
-          chmod 600 ~/.ssh/ec2.pem
-          cat > ~/.ssh/config <<EOF
-          Host ec2
-            HostName $EC2_HOST
-            User $EC2_USER
-            IdentityFile ~/.ssh/ec2.pem
-            StrictHostKeyChecking no
-            ServerAliveInterval 30
-          EOF
-
-      - name: Pull e run na EC2
-        run: |
-          ssh ec2 bash -s <<EOF
+          IMAGEM: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          DOCKER_USER: ${{ env.DOCKER_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
+          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+          APAGAR_BANCO: ${{ inputs.apagar_banco || false }}
+        with:
+          host: ${{ secrets.HOST_TEST || secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.KEY_TEST || secrets.EC2_SSH_KEY }}
+          port: 22
+          envs: IMAGEM,CONTAINER_NAME,DOCKER_USER,DOCKERHUB_TOKEN,AUTH0_DOMAIN,AUTH0_AUDIENCE,APAGAR_BANCO
+          script: |
             set -e
-            # login só para o pull (funciona mesmo se o repositório no Docker Hub for privado)
-            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            docker pull $IMAGE
+
+            # 1) Rede e Postgres (só cria na primeira vez; os dados ficam no volume postgres-data)
+            docker network create -d bridge rede 2>/dev/null || true
+            if [ -z "$(docker ps -aq -f name=^postgres-aula$)" ]; then
+              docker run -d --name postgres-aula --restart unless-stopped \
+                -e POSTGRES_DB=auladb -e POSTGRES_USER=usuario -e POSTGRES_PASSWORD=senha \
+                -v postgres-data:/var/lib/postgresql/data \
+                --network=rede postgres:17
+            fi
+            docker start postgres-aula > /dev/null
+            until docker exec postgres-aula pg_isready -U usuario -d auladb > /dev/null 2>&1; do sleep 1; done
+
+            # 2) Opcional (Run workflow > "Apagar o banco"): apaga todas as tabelas
+            if [ "$APAGAR_BANCO" = "true" ]; then
+              echo "Apagando o banco..."
+              docker exec postgres-aula psql -U usuario -d auladb -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+            fi
+
+            # 3) Baixa a imagem nova e sobe a API
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKER_USER" --password-stdin
+            docker pull $IMAGEM
             docker logout
 
-            docker rm -f $CONTAINER 2>/dev/null || true
-            if [ "$APAGAR_BANCO" = "true" ]; then
-              echo "Apagando o banco (volume api-data)..."
-              docker volume rm api-data 2>/dev/null || true
-            fi
-            docker run -d --name $CONTAINER --restart unless-stopped \
-              -p $PORTA_EXTERNA:$PORTA_INTERNA \
-              -v api-data:/data \
+            docker stop $CONTAINER_NAME 2>/dev/null || true
+            docker rm $CONTAINER_NAME 2>/dev/null || true
+
+            docker run -d \
+              --name $CONTAINER_NAME \
+              --restart unless-stopped \
+              -p 8080:8000 \
+              -e DB_HOST=postgres-aula \
               -e AUTH0_DOMAIN="$AUTH0_DOMAIN" \
               -e AUTH0_AUDIENCE="$AUTH0_AUDIENCE" \
-              $IMAGE
-            docker image prune -f
-          EOF
+              --network=rede \
+              $IMAGEM
 
-      - name: Verificar se a API subiu
-        run: |
-          ssh ec2 bash -s <<EOF
-            for i in \$(seq 1 20); do
-              if curl -fsS http://localhost:$PORTA_EXTERNA/health; then
-                echo; echo "API no ar: http://$EC2_HOST:$PORTA_EXTERNA/docs"; exit 0
+            docker image prune -f
+
+            # 4) Confere se subiu: sem token a API responde 401 (= está no ar e protegida)
+            for i in $(seq 1 60); do
+              codigo=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ || true)
+              if [ "$codigo" = "401" ]; then
+                echo "API no ar em http://localhost:8080"
+                exit 0
               fi
               sleep 2
             done
             echo "A API não respondeu. Logs do container:"
-            docker logs --tail 80 $CONTAINER
+            docker logs --tail 100 $CONTAINER_NAME
             exit 1
-          EOF

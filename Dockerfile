@@ -1,17 +1,23 @@
-FROM python:3.12-slim
+# Stage 1: Build
+FROM maven:3.9-eclipse-temurin-25 AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    DATABASE_URL=sqlite:////data/avaliacoes.db
+WORKDIR /build
+
+COPY pom.xml .
+RUN mvn dependency:go-offline
+
+COPY src ./src
+
+RUN mvn clean package -DskipTests
+
+# Stage 2: Runtime
+FROM eclipse-temurin:25-jre
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=builder /build/target/avaliacoes-*.jar app.jar
 
-COPY app ./app
-RUN mkdir -p /data
-
-# Dentro do container a API roda na 8000; o docker run mapeia 8080 -> 8000
+# A prova pede -p 8080:8000 (server.port=8000 no application.properties)
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
