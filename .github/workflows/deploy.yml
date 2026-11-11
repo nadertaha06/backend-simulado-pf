@@ -1,16 +1,18 @@
 # Deploy do backend na EC2 a cada push na main (ou manual em Actions > Run workflow).
 #
-# Como funciona (sem Docker Hub):
-#   1. faz o build da imagem no runner do GitHub
-#   2. manda a imagem para a EC2 via SSH (docker save | docker load)
-#   3. recria o container com o docker run pedido
+# Como funciona:
+#   1. build da imagem no runner do GitHub
+#   2. push da imagem para o Docker Hub  (usuario/api-avaliacoes:latest)
+#   3. na EC2 (via SSH): docker pull + docker run
 #
 # Secrets necessários (Settings > Secrets and variables > Actions):
-#   EC2_HOST        IP da máquina (ex.: 13.220.42.157)
-#   EC2_SSH_KEY     conteúdo INTEIRO do arquivo .pem
-#   AUTH0_DOMAIN    ex.: dev-xxxx.us.auth0.com
-#   AUTH0_AUDIENCE  ex.: https://avaliacoes-api
-#   EC2_USER        (opcional, padrão: ubuntu)
+#   DOCKERHUB_USERNAME  seu usuário do Docker Hub
+#   DOCKERHUB_TOKEN     token do Docker Hub (Account settings > Personal access tokens, Read & Write)
+#   EC2_HOST            IP da máquina (ex.: 13.220.42.157)
+#   EC2_SSH_KEY         conteúdo INTEIRO do arquivo .pem
+#   AUTH0_DOMAIN        ex.: dev-xxxx.us.auth0.com
+#   AUTH0_AUDIENCE      ex.: https://avaliacoes-api
+#   EC2_USER            (opcional, padrão: ubuntu)
 
 name: Deploy backend na AWS
 
@@ -19,9 +21,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# ⭐ Nome da imagem/container e portas (docker run -p 8080:8000)
+# ⭐ Nome da imagem no Docker Hub, nome do container e portas (docker run -p 8080:8000)
 env:
-  IMAGE: api-avaliacoes:latest
+  IMAGE_NAME: api-avaliacoes
   CONTAINER: api
   PORTA_EXTERNA: "8080"
   PORTA_INTERNA: "8000"
@@ -30,6 +32,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       EC2_HOST: ${{ secrets.EC2_HOST }}
       EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
       AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
@@ -44,14 +48,21 @@ jobs:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           faltando=""
-          [ -z "$EC2_HOST" ] && faltando="$faltando EC2_HOST"
-          [ -z "$EC2_SSH_KEY" ] && faltando="$faltando EC2_SSH_KEY"
-          [ -z "$AUTH0_DOMAIN" ] && faltando="$faltando AUTH0_DOMAIN"
-          [ -z "$AUTH0_AUDIENCE" ] && faltando="$faltando AUTH0_AUDIENCE"
+          for nome in DOCKERHUB_USERNAME DOCKERHUB_TOKEN EC2_HOST EC2_SSH_KEY AUTH0_DOMAIN AUTH0_AUDIENCE; do
+            [ -z "${!nome}" ] && faltando="$faltando $nome"
+          done
           if [ -n "$faltando" ]; then echo "::error::Secrets faltando:$faltando"; exit 1; fi
+          # Nome completo da imagem: usuario/api-avaliacoes:latest
+          echo "IMAGE=$DOCKERHUB_USERNAME/$IMAGE_NAME:latest" >> "$GITHUB_ENV"
 
-      - name: Build da imagem Docker
+      - name: Login no Docker Hub
+        run: echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Build da imagem
         run: docker build -t "$IMAGE" .
+
+      - name: Push para o Docker Hub
+        run: docker push "$IMAGE"
 
       - name: Configurar SSH
         env:
@@ -69,13 +80,15 @@ jobs:
             ServerAliveInterval 30
           EOF
 
-      - name: Enviar a imagem para a EC2
-        run: docker save "$IMAGE" | gzip | ssh ec2 'gunzip | docker load'
-
-      - name: Subir o container
+      - name: Pull e run na EC2
         run: |
           ssh ec2 bash -s <<EOF
             set -e
+            # login só para o pull (funciona mesmo se o repositório no Docker Hub for privado)
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            docker pull $IMAGE
+            docker logout
+
             docker rm -f $CONTAINER 2>/dev/null || true
             docker run -d --name $CONTAINER --restart unless-stopped \
               -p $PORTA_EXTERNA:$PORTA_INTERNA \

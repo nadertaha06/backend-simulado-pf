@@ -31,6 +31,7 @@ Exemplo de POST:
 | **Nova rota** (GET por id, DELETE, PUT) | exemplos prontos no fim de [app/routes.py](app/routes.py) | exemplos no fim de `src/api.js` |
 | **Nota com decimal** (7.5) | `nota: int` → `nota: float` em [app/models.py](app/models.py) | `step: 0.5` no campo nota em `CAMPOS` |
 | **Validação de campo** (tamanho, faixa) | `Field(ge=, le=, min_length=, max_length=)` em [app/models.py](app/models.py) | `min`/`max`/`obrigatorio` em `CAMPOS` |
+| **Trocar o nome da imagem** no Docker Hub | `IMAGE_NAME` em [.github/workflows/deploy.yml](.github/workflows/deploy.yml) | nada |
 | **Trocar a porta externa** (8080) | `PORTA_EXTERNA` em [.github/workflows/deploy.yml](.github/workflows/deploy.yml) | `vercel.json` |
 | **Trocar o IP da máquina** | secret `EC2_HOST` | `vercel.json` |
 
@@ -78,6 +79,8 @@ Não precisa renomear as classes (`Avaliacao`…) se a entidade mudar de nome: t
 
 | Secret | Valor |
 |---|---|
+| `DOCKERHUB_USERNAME` | seu usuário do Docker Hub |
+| `DOCKERHUB_TOKEN` | token do Docker Hub: hub.docker.com › Account settings › **Personal access tokens** › *Generate new token* (permissão **Read & Write**) |
 | `EC2_HOST` | `13.220.42.157` |
 | `EC2_SSH_KEY` | o conteúdo **inteiro** do `projsoft26b.pem` (de `-----BEGIN` até `END-----`). No Mac: `pbcopy < projsoft26b.pem` |
 | `AUTH0_DOMAIN` | ex.: `dev-xxxx.us.auth0.com` (sem `https://` e sem `/` no final) |
@@ -88,11 +91,11 @@ Não precisa renomear as classes (`Avaliacao`…) se a entidade mudar de nome: t
 
 Todo `git push` na `main` dispara o [deploy.yml](.github/workflows/deploy.yml), que:
 
-1. faz o build da imagem Docker no runner do GitHub;
-2. manda a imagem para a EC2 por SSH (`docker save | docker load`, sem Docker Hub);
+1. faz login no Docker Hub, o build da imagem e o `docker push` (`SEU_USUARIO/api-avaliacoes:latest`);
+2. entra na EC2 por SSH e faz `docker pull` da imagem;
 3. recria o container:
    ```bash
-   docker run -d --name api --restart unless-stopped -p 8080:8000 -v api-data:/data -e AUTH0_DOMAIN=... -e AUTH0_AUDIENCE=... api-avaliacoes:latest
+   docker run -d --name api --restart unless-stopped -p 8080:8000 -v api-data:/data -e AUTH0_DOMAIN=... -e AUTH0_AUDIENCE=... SEU_USUARIO/api-avaliacoes:latest
    ```
    O `-v api-data:/data` guarda o banco SQLite fora do container, então os dados sobrevivem aos deploys;
 4. confere se `/health` respondeu (se não, mostra os logs do container).
