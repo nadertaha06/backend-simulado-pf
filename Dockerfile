@@ -15,7 +15,7 @@ FROM eclipse-temurin:25-jre
 
 WORKDIR /app
 
-COPY --from=builder /build/target/avaliacoes-*.jar app.jar
+COPY --from=builder /build/target/artigos-*.jar app.jar
 
 # A prova pede -p 8080:8000 (server.port=8000 no application.properties)
 EXPOSE 8000

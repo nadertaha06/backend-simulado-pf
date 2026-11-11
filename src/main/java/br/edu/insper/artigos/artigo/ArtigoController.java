@@ -1,4 +1,4 @@
-package br.edu.insper.avaliacoes.avaliacao;
+package br.edu.insper.artigos.artigo;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -10,48 +10,51 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 @RestController
-@RequestMapping("/avaliacoes")                              // ⭐ ROTA
-public class AvaliacaoController {
+@RequestMapping("/artigos")                                  // ⭐ ROTA
+public class ArtigoController {
 
     // ⭐ Namespace da Action do Auth0 (igual ao NAMESPACE do front)
     private static final String NAMESPACE = "https://avaliacoes-insper.com";
 
     @Autowired
-    private AvaliacaoService avaliacaoService;
+    private ArtigoService artigoService;
 
+    // GET /artigos: lista todos os artigos (ADMIN e usuário comum)
     @GetMapping
-    public List<Avaliacao> listarTodas(@AuthenticationPrincipal Jwt jwt) {
+    public List<Artigo> listarTodos(@AuthenticationPrincipal Jwt jwt) {
         verificarRole(jwt, "ADMIN", "USER");                 // ⭐ quem pode LISTAR
-        return avaliacaoService.listarTodas();
+        return artigoService.listarTodos();
     }
 
+    // POST /artigos: cria um artigo (só ADMIN). O e-mail de quem criou vem do token.
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Avaliacao criar(@RequestBody Avaliacao avaliacao, @AuthenticationPrincipal Jwt jwt) {
-        verificarRole(jwt, "ADMIN");                         // ⭐ quem pode CADASTRAR
+    public Artigo criar(@RequestBody Artigo artigo, @AuthenticationPrincipal Jwt jwt) {
+        verificarRole(jwt, "ADMIN");                         // ⭐ quem pode CRIAR
         String email = jwt.getClaimAsString(NAMESPACE + "/email");
-        return avaliacaoService.criar(avaliacao, email);
+        return artigoService.criar(artigo, email);
+    }
+
+    // DELETE /artigos/{id}: deleta um artigo existente (só ADMIN)
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void excluir(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
+        verificarRole(jwt, "ADMIN");                         // ⭐ quem pode DELETAR
+        artigoService.excluir(id);
     }
 
     // ===== Rotas prontas: descomente se a prova pedir (selecione e Cmd+/) =====
 
     // @GetMapping("/{id}")
-    // public Avaliacao buscarPorId(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
+    // public Artigo buscarPorId(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
     //     verificarRole(jwt, "ADMIN", "USER");
-    //     return avaliacaoService.buscarPorId(id);
-    // }
-
-    // @DeleteMapping("/{id}")
-    // @ResponseStatus(HttpStatus.NO_CONTENT)
-    // public void excluir(@PathVariable Integer id, @AuthenticationPrincipal Jwt jwt) {
-    //     verificarRole(jwt, "ADMIN");
-    //     avaliacaoService.excluir(id);
+    //     return artigoService.buscarPorId(id);
     // }
 
     // @PutMapping("/{id}")
-    // public Avaliacao atualizar(@PathVariable Integer id, @RequestBody Avaliacao avaliacao, @AuthenticationPrincipal Jwt jwt) {
+    // public Artigo atualizar(@PathVariable Integer id, @RequestBody Artigo artigo, @AuthenticationPrincipal Jwt jwt) {
     //     verificarRole(jwt, "ADMIN");
-    //     return avaliacaoService.atualizar(id, avaliacao);
+    //     return artigoService.atualizar(id, artigo);
     // }
 
     // Lê as roles do token (claim {NAMESPACE}/roles) e dá 403 se não tiver nenhuma das permitidas

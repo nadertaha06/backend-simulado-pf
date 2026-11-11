@@ -1,4 +1,4 @@
-# API de Avaliações: guia completo para a prova
+# API de Artigos (base de conhecimentos): guia completo para a prova
 
 Backend em **Spring Boot** (Java 25), no **mesmo padrão do projeto do professor**
 ([projeto-software-2026-2-partida](https://github.com/ezambomsantana/projeto-software-2026-2-partida)):
@@ -8,7 +8,7 @@ O front fica em outro repositório: [frontend-simulado-pf](https://github.com/na
 | O quê | Link |
 |---|---|
 | Site (Vercel) | https://frontend-simulado-pf.vercel.app |
-| API (AWS) | http://13.220.42.157:8080/avaliacoes (precisa de token) |
+| API (AWS) | http://13.220.42.157:8080/artigos (precisa de token) |
 | Deploys | aba **Actions** deste repositório |
 
 > Este guia cobre o **back e o front**, porque quase toda mudança da prova mexe nos dois.
@@ -49,7 +49,7 @@ O front fica em outro repositório: [frontend-simulado-pf](https://github.com/na
  Navegador ──► https://frontend-simulado-pf.vercel.app        (React)
                  │  login ◄──► Auth0  (devolve um token com roles e email)
                  │
-                 └─► /api/avaliacoes ──(vercel.json repassa)──► http://13.220.42.157:8080/avaliacoes
+                 └─► /api/artigos ──(vercel.json repassa)──► http://13.220.42.157:8080/artigos
                                                                   container "api" (Spring Boot)
                                                                   │  valida o token (issuer + audience)
                                                                   │  confere a role no controller
@@ -64,24 +64,28 @@ O front fica em outro repositório: [frontend-simulado-pf](https://github.com/na
 
 | Rota | Quem acessa | O que faz |
 |---|---|---|
-| `GET /avaliacoes` | ADMIN, USER | lista todas, mais recentes primeiro |
-| `POST /avaliacoes` | ADMIN | cadastra (o avaliador é o usuário logado, vem do token) |
+| `GET /artigos` | ADMIN, USER | lista todos os artigos, mais recentes primeiro |
+| `POST /artigos` | ADMIN | cria um artigo (o e-mail de quem criou é o do usuário logado, vem do token) |
+| `DELETE /artigos/{id}` | ADMIN | deleta um artigo existente (404 se não existir) |
 
-**Entidade:** `id`, `emailAvaliador`, `emailAvaliado`, `comentarios`, `nota` (0 a 10), `dataAvaliacao`.
+**Entidade:** `id`, `titulo`, `descricao`, `prioridade` (BAIXA, MEDIA ou ALTA), `emailUsuario`, `dataCriacao`.
+
+> As receitas abaixo (A–M) usam como exemplo os campos do simulado de avaliações (`emailAvaliado`, `nota`...).
+> A ideia é a mesma: troque pelos campos do artigo.
 
 ---
 
 ## 2. Mapa: onde fica cada coisa
 
-### Backend (este repositório): `src/main/java/br/edu/insper/avaliacoes/`
+### Backend (este repositório): `src/main/java/br/edu/insper/artigos/`
 
 | Arquivo | O que tem | Muda na prova? |
 |---|---|---|
-| ⭐ [avaliacao/Avaliacao.java](src/main/java/br/edu/insper/avaliacoes/avaliacao/Avaliacao.java) | os **campos** (`@Entity @Getter @Setter`) | **Sim** |
-| ⭐ [avaliacao/AvaliacaoController.java](src/main/java/br/edu/insper/avaliacoes/avaliacao/AvaliacaoController.java) | a **rota**, **quem pode** (`verificarRole`) e rotas prontas comentadas | **Sim** |
-| ⭐ [avaliacao/AvaliacaoService.java](src/main/java/br/edu/insper/avaliacoes/avaliacao/AvaliacaoService.java) | o que **lista**, o que **salva**, **validações** e **regras** | **Sim** |
-| ⭐ [avaliacao/AvaliacaoRepository.java](src/main/java/br/edu/insper/avaliacoes/avaliacao/AvaliacaoRepository.java) | consultas (`findBy...`) | Quando muda a listagem ou os campos |
-| [config/WebSecurityConfig.java](src/main/java/br/edu/insper/avaliacoes/config/WebSecurityConfig.java) | CORS e "toda rota precisa de token" | Quase nunca |
+| ⭐ [artigo/Artigo.java](src/main/java/br/edu/insper/artigos/artigo/Artigo.java) | os **campos** (`@Entity @Getter @Setter`) | **Sim** |
+| ⭐ [artigo/ArtigoController.java](src/main/java/br/edu/insper/artigos/artigo/ArtigoController.java) | a **rota**, **quem pode** (`verificarRole`) e rotas prontas comentadas | **Sim** |
+| ⭐ [artigo/ArtigoService.java](src/main/java/br/edu/insper/artigos/artigo/ArtigoService.java) | o que **lista**, o que **salva**, **validações** e **regras** | **Sim** |
+| ⭐ [artigo/ArtigoRepository.java](src/main/java/br/edu/insper/artigos/artigo/ArtigoRepository.java) | consultas (`findBy...`) | Quando muda a listagem ou os campos |
+| [config/WebSecurityConfig.java](src/main/java/br/edu/insper/artigos/config/WebSecurityConfig.java) | CORS e "toda rota precisa de token" | Quase nunca |
 | [application.properties](src/main/resources/application.properties) | porta 8000, Postgres, Auth0 | Quase nunca |
 | [.github/workflows/deploy.yml](.github/workflows/deploy.yml) | o deploy | Só usuário do Docker Hub, porta |
 
@@ -101,10 +105,10 @@ O front fica em outro repositório: [frontend-simulado-pf](https://github.com/na
 
 1. **Leia o enunciado e anote:** rotas, quem acessa cada uma, campos, **o que o GET lista** e as regras.
 2. **Backend**, nesta ordem:
-   1. `Avaliacao.java`: campos;
-   2. `AvaliacaoController.java`: rota e `verificarRole(...)`;
-   3. `AvaliacaoService.java`: `validar()`, o que o `criar()` preenche e o que o `listarTodas()` devolve;
-   4. `AvaliacaoRepository.java`: **apague ou ajuste os métodos que usam campos que não existem mais** (senão a API não sobe).
+   1. `Artigo.java`: campos;
+   2. `ArtigoController.java`: rota e `verificarRole(...)`;
+   3. `ArtigoService.java`: `validar()`, o que o `criar()` preenche e o que o `listarTodos()` devolve;
+   4. `ArtigoRepository.java`: **apague ou ajuste os métodos que usam campos que não existem mais** (senão a API não sobe).
 3. **Compile antes de subir** (pega erro de digitação em 20 segundos): `./mvnw -q compile`
 4. **Frontend:** `src/config.js` com rota, textos, roles e `CAMPOS`. O `nome` de cada campo tem que ser **igual** ao do Java.
 5. **Suba os dois:**
@@ -123,14 +127,14 @@ O front fica em outro repositório: [frontend-simulado-pf](https://github.com/na
 
 ### A. Mudar o nome da rota
 
-Ex.: `/avaliacoes` → `/feedbacks`
+Ex.: `/artigos` → `/feedbacks`
 
 | Onde | Mudança |
 |---|---|
-| Back: `AvaliacaoController.java` | `@RequestMapping("/feedbacks")` |
+| Back: `ArtigoController.java` | `@RequestMapping("/feedbacks")` |
 | Front: `src/config.js` | `export const ROTA = '/feedbacks'` |
 
-**Só uma rota muda** (ex.: o GET vira `/avaliacoes/todas`):
+**Só uma rota muda** (ex.: o GET vira `/artigos/todas`):
 - Back: troque `@GetMapping` por `@GetMapping("/todas")`.
 - Front, `src/api.js`: `listar = (token) => request(token, \`${ROTA}/todas\`)`.
 
@@ -141,8 +145,8 @@ Ex.: `/avaliacoes` → `/feedbacks`
 Enunciado de exemplo: *"Tarefa: id, título, descrição, prioridade (BAIXA/MEDIA/ALTA), horas (0 a 10), status (começa PENDENTE), email do criador, data de criação. POST /tarefas (ADMIN), GET /tarefas (ADMIN e USER)."*
 
 **Renomear as classes (opcional, mas fica mais bonito):** clique no nome da classe e aperte **F2** no VS Code
-(**Shift+F6** no IntelliJ). Ele renomeia o arquivo e todos os usos. Faça em `Avaliacao`, `AvaliacaoController`,
-`AvaliacaoService` e `AvaliacaoRepository`. Com pressa, pode deixar os nomes; só os campos importam.
+(**Shift+F6** no IntelliJ). Ele renomeia o arquivo e todos os usos. Faça em `Artigo`, `ArtigoController`,
+`ArtigoService` e `ArtigoRepository`. Com pressa, pode deixar os nomes; só os campos importam.
 
 **1. Entidade** (troque os campos):
 ```java
@@ -169,13 +173,13 @@ public class Tarefa {
 List<Tarefa> findAllByOrderByDataCriacaoDesc();
 ```
 
-**3. Service:** `listarTodas()` chama `findAllByOrderByDataCriacaoDesc()`. No `criar()`, troque o bloco "campos que o servidor preenche" por
+**3. Service:** `listarTodos()` chama `findAllByOrderByDataCriacaoDesc()`. No `criar()`, troque o bloco "campos que o servidor preenche" por
 (o F2 renomeia a classe, mas a variável continua `avaliacao`):
 ```java
-        avaliacao.setId(null);
-        avaliacao.setStatus("PENDENTE");
-        avaliacao.setEmailCriador(emailAvaliador);
-        avaliacao.setDataCriacao(LocalDateTime.now());
+        artigo.setId(null);
+        artigo.setStatus("PENDENTE");
+        artigo.setEmailCriador(emailUsuario);
+        artigo.setDataCriacao(LocalDateTime.now());
 ```
 Troque o `validar()` por:
 ```java
@@ -223,10 +227,10 @@ export const CAMPOS = [
 As roles são conferidas no **controller**, com o `verificarRole(jwt, ...)`. Ele lê
 `jwt.getClaimAsStringList(NAMESPACE + "/roles")`, igual o professor faz, e dá **403** se não tiver nenhuma das roles.
 
-| Situação | Back (`AvaliacaoController.java`) | Front (`src/config.js`) |
+| Situação | Back (`ArtigoController.java`) | Front (`src/config.js`) |
 |---|---|---|
 | USER também cadastra | no `criar`: `verificarRole(jwt, "ADMIN", "USER");` | `ROLES_PODE_CADASTRAR = ['ADMIN', 'USER']` |
-| Só ADMIN lista | no `listarTodas`: `verificarRole(jwt, "ADMIN");` | nada (o USER vê o erro 403) |
+| Só ADMIN lista | no `listarTodos`: `verificarRole(jwt, "ADMIN");` | nada (o USER vê o erro 403) |
 | Basta estar logado | apague a linha `verificarRole(...)` | — |
 | Role nova (`GESTOR`) | `verificarRole(jwt, "ADMIN", "GESTOR");` | inclua `'GESTOR'` onde precisar |
 
@@ -247,42 +251,42 @@ List<String> roles = jwt.getClaimAsStringList(NAMESPACE + "/roles");
 
 Service (adicione):
 ```java
-    public List<Avaliacao> listarPorAvaliado(String email) {
-        return avaliacaoRepository.findByEmailAvaliadoOrderByDataAvaliacaoDesc(email);
+    public List<Artigo> listarPorAvaliado(String email) {
+        return artigoRepository.findByEmailAvaliadoOrderByDataCriacaoDesc(email);
     }
 ```
-Controller, no `listarTodas`, troque o `return` por:
+Controller, no `listarTodos`, troque o `return` por:
 ```java
-        return avaliacaoService.listarPorAvaliado(jwt.getClaimAsString(NAMESPACE + "/email"));
+        return artigoService.listarPorAvaliado(jwt.getClaimAsString(NAMESPACE + "/email"));
 ```
 
 **D2. Só as que o usuário logado FEZ (avaliador):** igual ao D1, usando
-`findByEmailAvaliadorOrderByDataAvaliacaoDesc(email)` (já está no repository).
+`findByEmailUsuarioOrderByDataCriacaoDesc(email)` (já está no repository).
 
-**D3. ADMIN vê tudo, USER vê só as dele** (use o `listarPorAvaliado` do D1). Controller, no `listarTodas`:
+**D3. ADMIN vê tudo, USER vê só as dele** (use o `listarPorAvaliado` do D1). Controller, no `listarTodos`:
 ```java
         verificarRole(jwt, "ADMIN", "USER");
         List<String> roles = jwt.getClaimAsStringList(NAMESPACE + "/roles");
         if (roles.contains("ADMIN")) {
-            return avaliacaoService.listarTodas();
+            return artigoService.listarTodos();
         }
-        return avaliacaoService.listarPorAvaliado(jwt.getClaimAsString(NAMESPACE + "/email"));
+        return artigoService.listarPorAvaliado(jwt.getClaimAsString(NAMESPACE + "/email"));
 ```
 
-**D4. Rota separada `GET /avaliacoes/minhas`** (controller, cole junto das outras rotas):
+**D4. Rota separada `GET /artigos/minhas`** (controller, cole junto das outras rotas):
 ```java
     @GetMapping("/minhas")
-    public List<Avaliacao> minhas(@AuthenticationPrincipal Jwt jwt) {
+    public List<Artigo> minhas(@AuthenticationPrincipal Jwt jwt) {
         verificarRole(jwt, "ADMIN", "USER");
-        return avaliacaoService.listarPorAvaliado(jwt.getClaimAsString(NAMESPACE + "/email"));
+        return artigoService.listarPorAvaliado(jwt.getClaimAsString(NAMESPACE + "/email"));
     }
 ```
 No Spring a ordem das rotas no arquivo **não importa**: `/minhas` funciona mesmo existindo `/{id}`.
 Para o front chamar `/minhas`: em `src/api.js`, `listar = (token) => request(token, \`${ROTA}/minhas\`)`.
 
 **D5. Outra ordenação** (repository, o nome do método define o SQL):
-- maior nota primeiro: `List<Avaliacao> findAllByOrderByNotaDesc();`
-- mais antigas primeiro: `List<Avaliacao> findAllByOrderByDataAvaliacaoAsc();`
+- maior nota primeiro: `List<Artigo> findAllByOrderByNotaDesc();`
+- mais antigas primeiro: `List<Artigo> findAllByOrderByDataCriacaoAsc();`
 
 **Como montar o nome do método:** `findBy` + Campo + (`And`/`Or` + Campo) + `OrderBy` + Campo + `Asc`/`Desc`.
 Ex.: `findByEmailAvaliadoAndNotaGreaterThanEqual(String email, Integer nota)`.
@@ -292,34 +296,34 @@ Palavras úteis: `GreaterThan`, `LessThanEqual`, `Between`, `Containing`, `Ignor
 
 ### E. Filtros por parâmetro
 
-**E1. Query string: `GET /avaliacoes?notaMinima=7&emailAvaliado=ana@empresa.com`** (os dois opcionais)
+**E1. Query string: `GET /artigos?notaMinima=7&emailAvaliado=ana@empresa.com`** (os dois opcionais)
 
-Controller, troque o `listarTodas` por:
+Controller, troque o `listarTodos` por:
 ```java
     @GetMapping
-    public List<Avaliacao> listarTodas(@RequestParam(required = false) Integer notaMinima,
+    public List<Artigo> listarTodos(@RequestParam(required = false) Integer notaMinima,
                                        @RequestParam(required = false) String emailAvaliado,
                                        @AuthenticationPrincipal Jwt jwt) {
         verificarRole(jwt, "ADMIN", "USER");
-        return avaliacaoService.listarTodas(notaMinima, emailAvaliado);
+        return artigoService.listarTodos(notaMinima, emailAvaliado);
     }
 ```
-Service, troque o `listarTodas()` por:
+Service, troque o `listarTodos()` por:
 ```java
-    public List<Avaliacao> listarTodas(Integer notaMinima, String emailAvaliado) {
-        return avaliacaoRepository.findAllByOrderByDataAvaliacaoDesc().stream()
+    public List<Artigo> listarTodos(Integer notaMinima, String emailAvaliado) {
+        return artigoRepository.findAllByOrderByDataCriacaoDesc().stream()
                 .filter(a -> notaMinima == null || a.getNota() >= notaMinima)
                 .filter(a -> emailAvaliado == null || a.getEmailAvaliado().equals(emailAvaliado))
                 .toList();
     }
 ```
 
-**E2. No caminho: `GET /avaliacoes/avaliado/{email}`** (controller):
+**E2. No caminho: `GET /artigos/avaliado/{email}`** (controller):
 ```java
     @GetMapping("/avaliado/{email}")
-    public List<Avaliacao> porAvaliado(@PathVariable String email, @AuthenticationPrincipal Jwt jwt) {
+    public List<Artigo> porAvaliado(@PathVariable String email, @AuthenticationPrincipal Jwt jwt) {
         verificarRole(jwt, "ADMIN", "USER");
-        return avaliacaoService.listarPorAvaliado(email);   // método do D1
+        return artigoService.listarPorAvaliado(email);   // método do D1
     }
 ```
 
@@ -329,9 +333,9 @@ Service, troque o `listarTodas()` por:
 
 Ex.: *"o GET deve listar só id, avaliado e nota"*. Igual ao `PartidaResultadoDTO` do professor.
 
-**1. Crie `avaliacao/AvaliacaoResumoDTO.java`:**
+**1. Crie `artigo/ArtigoResumoDTO.java`:**
 ```java
-package br.edu.insper.avaliacoes.avaliacao;
+package br.edu.insper.artigos.artigo;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -342,7 +346,7 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class AvaliacaoResumoDTO {
+public class ArtigoResumoDTO {
     private Integer id;
     private String emailAvaliado;
     private Integer nota;
@@ -350,13 +354,13 @@ public class AvaliacaoResumoDTO {
 ```
 **2. Service:**
 ```java
-    public List<AvaliacaoResumoDTO> listarResumo() {
-        return avaliacaoRepository.findAllByOrderByDataAvaliacaoDesc().stream()
-                .map(a -> new AvaliacaoResumoDTO(a.getId(), a.getEmailAvaliado(), a.getNota()))
+    public List<ArtigoResumoDTO> listarResumo() {
+        return artigoRepository.findAllByOrderByDataCriacaoDesc().stream()
+                .map(a -> new ArtigoResumoDTO(a.getId(), a.getEmailAvaliado(), a.getNota()))
                 .toList();
     }
 ```
-**3. Controller:** o `listarTodas` passa a devolver `List<AvaliacaoResumoDTO>` e chamar `avaliacaoService.listarResumo()`.
+**3. Controller:** o `listarTodos` passa a devolver `List<ArtigoResumoDTO>` e chamar `artigoService.listarResumo()`.
 
 **4. Front:** em `CAMPOS`, `naTabela: false` nos campos que não vêm mais.
 
@@ -368,9 +372,9 @@ public class AvaliacaoResumoDTO {
 
 | Onde | Mudança |
 |---|---|
-| `Avaliacao.java` | `private String cargo;` (o Lombok cria o getter e o setter) |
-| `AvaliacaoService.java`, `validar()` (se obrigatório) | `if (avaliacao.getCargo() == null \|\| avaliacao.getCargo().isBlank()) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cargo é obrigatório"); }` |
-| `AvaliacaoService.java`, `atualizar()` (se usar PUT) | `avaliacao.setCargo(dados.getCargo());` |
+| `Artigo.java` | `private String cargo;` (o Lombok cria o getter e o setter) |
+| `ArtigoService.java`, `validar()` (se obrigatório) | `if (artigo.getCargo() == null \|\| artigo.getCargo().isBlank()) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cargo é obrigatório"); }` |
+| `ArtigoService.java`, `atualizar()` (se usar PUT) | `artigo.setCargo(dados.getCargo());` |
 | Front, `CAMPOS` | `{ nome: 'cargo', label: 'Cargo', tipo: 'text', noForm: true, naTabela: true, obrigatorio: true },` |
 
 A coluna nova é criada sozinha no deploy (`ddl-auto=update`).
@@ -391,9 +395,9 @@ A coluna nova é criada sozinha no deploy (`ddl-auto=update`).
 
 O usuário **não** envia; o back preenche no `criar()` do service, no bloco "campos que o servidor preenche":
 ```java
-        avaliacao.setStatus("PENDENTE");                 // valor fixo
-        avaliacao.setDataAvaliacao(LocalDateTime.now()); // data/hora de agora
-        avaliacao.setEmailAvaliador(emailAvaliador);     // email do token
+        artigo.setStatus("PENDENTE");                 // valor fixo
+        artigo.setDataCriacao(LocalDateTime.now()); // data/hora de agora
+        artigo.setEmailUsuario(emailUsuario);     // email do token
 ```
 Mesmo que o JSON do POST mande esses campos, o `set...` do servidor sobrescreve.
 
@@ -427,14 +431,14 @@ Modelo do `throw`: `throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "m
 
 ### J. Buscar por id, excluir, atualizar
 
-Já estão **prontas e comentadas** no `AvaliacaoController.java` (e os métodos já existem no service).
+Já estão **prontas e comentadas** no `ArtigoController.java` (e os métodos já existem no service).
 Selecione o bloco e aperte **Cmd+/** (Ctrl+/ no Windows) para descomentar.
 
 | Rota | Quem (padrão) | Retorno |
 |---|---|---|
-| `GET /avaliacoes/{id}` | ADMIN, USER | 200 ou 404 |
-| `DELETE /avaliacoes/{id}` | ADMIN | 204 ou 404 |
-| `PUT /avaliacoes/{id}` | ADMIN | 200 ou 404 |
+| `GET /artigos/{id}` | ADMIN, USER | 200 ou 404 |
+| `DELETE /artigos/{id}` | ADMIN | 204 ou 404 |
+| `PUT /artigos/{id}` | ADMIN | 200 ou 404 |
 
 **Botão "Excluir" no front:** já existe. Depois de descomentar o DELETE, em `src/config.js`:
 ```js
@@ -442,30 +446,30 @@ export const MOSTRAR_EXCLUIR = true
 export const ROLES_PODE_EXCLUIR = ['ADMIN']
 ```
 
-**Rota que muda só um pedaço** (estilo `POST /partidas/{id}/resultado` do professor), ex.: `PATCH /avaliacoes/{id}/nota`:
+**Rota que muda só um pedaço** (estilo `POST /partidas/{id}/resultado` do professor), ex.: `PATCH /artigos/{id}/nota`:
 ```java
     @PatchMapping("/{id}/nota")
-    public Avaliacao mudarNota(@PathVariable Integer id, @RequestBody Avaliacao dados, @AuthenticationPrincipal Jwt jwt) {
+    public Artigo mudarNota(@PathVariable Integer id, @RequestBody Artigo dados, @AuthenticationPrincipal Jwt jwt) {
         verificarRole(jwt, "ADMIN");
-        Avaliacao avaliacao = avaliacaoService.buscarPorId(id);
-        avaliacao.setNota(dados.getNota());
-        return avaliacaoService.salvar(avaliacao);
+        Artigo avaliacao = artigoService.buscarPorId(id);
+        artigo.setNota(dados.getNota());
+        return artigoService.salvar(avaliacao);
     }
 ```
-(no service: `public Avaliacao salvar(Avaliacao a) { return avaliacaoRepository.save(a); }`)
+(no service: `public Artigo salvar(Artigo a) { return artigoRepository.save(a); }`)
 
 ---
 
 ### K. Rota de estatística (média)
 
-Ex.: *"GET /avaliacoes/media: média das notas de cada avaliado"*.
+Ex.: *"GET /artigos/media: média das notas de cada avaliado"*.
 
 Service (adicione os imports `java.util.Map` e `java.util.stream.Collectors` no topo):
 ```java
     public List<Map<String, Object>> medias() {
-        Map<String, Double> medias = avaliacaoRepository.findAll().stream()
-                .collect(Collectors.groupingBy(Avaliacao::getEmailAvaliado,
-                        Collectors.averagingInt(Avaliacao::getNota)));
+        Map<String, Double> medias = artigoRepository.findAll().stream()
+                .collect(Collectors.groupingBy(Artigo::getEmailAvaliado,
+                        Collectors.averagingInt(Artigo::getNota)));
         return medias.entrySet().stream()
                 .map(e -> Map.<String, Object>of("emailAvaliado", e.getKey(), "media", e.getValue()))
                 .toList();
@@ -476,12 +480,12 @@ Controller (adicione `import java.util.Map;`):
     @GetMapping("/media")
     public List<Map<String, Object>> medias(@AuthenticationPrincipal Jwt jwt) {
         verificarRole(jwt, "ADMIN", "USER");
-        return avaliacaoService.medias();
+        return artigoService.medias();
     }
 ```
 Resposta: `[{"emailAvaliado": "ana@empresa.com", "media": 5.5}]`.
 Outras contas: `Collectors.counting()` (quantidade), `Collectors.summingInt(...)` (soma).
-Média geral de todos: `findAll().stream().mapToInt(Avaliacao::getNota).average().orElse(0)`.
+Média geral de todos: `findAll().stream().mapToInt(Artigo::getNota).average().orElse(0)`.
 
 ---
 
@@ -491,26 +495,26 @@ No `criar()` do service, **depois** do `validar(avaliacao);`:
 
 **L1. Não pode avaliar a si mesmo → 400**
 ```java
-        if (emailAvaliador.equals(avaliacao.getEmailAvaliado())) {
+        if (emailUsuario.equals(artigo.getEmailAvaliado())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Você não pode avaliar a si mesmo");
         }
 ```
 
 **L2. Não pode avaliar a mesma pessoa duas vezes → 409** (o método já está no repository)
 ```java
-        if (avaliacaoRepository.existsByEmailAvaliadorAndEmailAvaliado(emailAvaliador, avaliacao.getEmailAvaliado())) {
+        if (artigoRepository.existsByEmailUsuarioAndEmailAvaliado(emailUsuario, artigo.getEmailAvaliado())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Você já avaliou essa pessoa");
         }
 ```
 
 **L3. O avaliador vem no corpo do POST, e não do token:** no `criar()`, troque
-`avaliacao.setEmailAvaliador(emailAvaliador);` por
+`artigo.setEmailUsuario(emailUsuario);` por
 ```java
-        if (avaliacao.getEmailAvaliador() == null) {
-            avaliacao.setEmailAvaliador(emailAvaliador);
+        if (artigo.getEmailUsuario() == null) {
+            artigo.setEmailUsuario(emailUsuario);
         }
 ```
-No front, `emailAvaliador` com `noForm: true, obrigatorio: true`.
+No front, `emailUsuario` com `noForm: true, obrigatorio: true`.
 
 **Códigos de erro:**
 
@@ -543,7 +547,7 @@ No front, `emailAvaliador` com `noForm: true, obrigatorio: true`.
 | `cannot find symbol ... getNota()` | usa um campo que não existe mais | ajuste o `validar()`, `atualizar()` ou o controller |
 | Actions vermelho em **Login to Docker Hub** | `DOCKERHUB_TOKEN` errado ou expirado | gere outro token (Read & Write) |
 | Actions vermelho em **Deploy via SSH**, sem logs | chave ou IP errados, ou EC2 desligada | confira `HOST_TEST`/`KEY_TEST` (ou `EC2_HOST`/`EC2_SSH_KEY`) |
-| **Deploy via SSH** mostra `No property 'nota' found for type` | método do repository com campo que não existe | apague ou renomeie o método no `AvaliacaoRepository` |
+| **Deploy via SSH** mostra `No property 'nota' found for type` | método do repository com campo que não existe | apague ou renomeie o método no `ArtigoRepository` |
 | **Deploy via SSH** mostra `Could not resolve placeholder 'AUTH0_DOMAIN'` | faltam os secrets do Auth0 | cadastre `AUTH0_DOMAIN` e `AUTH0_AUDIENCE` |
 | Site: **"Falta configurar o Auth0"** | faltam variáveis na Vercel | cadastre as 3 `VITE_AUTH0_*` (tipo Config) e faça **Redeploy** |
 | Login: **Callback URL mismatch** | URL do site não está no Auth0 | Auth0 › Applications › SPA › Allowed Callback/Logout URLs e Web Origins |
@@ -563,7 +567,7 @@ No front, `emailAvaliador` com `noForm: true, obrigatorio: true`.
 ssh -i projsoft26b.pem ubuntu@13.220.42.157
 docker ps                 # "api" e "postgres-aula" estão Up?
 docker logs -f api        # erros da API em tempo real (Ctrl+C sai)
-docker exec -it postgres-aula psql -U usuario -d auladb -c "select * from avaliacao;"
+docker exec -it postgres-aula psql -U usuario -d auladb -c "select * from artigo;"
 ```
 
 ---
@@ -598,7 +602,7 @@ Faça só se precisar de um tenant novo. Siga a ordem.
 
 > Mudou a role de alguém? A pessoa precisa **sair e entrar de novo**.
 
-**Conferir o token:** DevTools (F12) › Network › chamada `avaliacoes` › copie o header `Authorization`
+**Conferir o token:** DevTools (F12) › Network › chamada `artigos` › copie o header `Authorization`
 sem o `Bearer ` › cole em **jwt.io**. Tem que aparecer `"https://avaliacoes-insper.com/roles": ["ADMIN"]`.
 
 ---
@@ -654,7 +658,7 @@ Front local apontando para esse back: no `.env` do front, `VITE_PROXY_TARGET=htt
 
 **Testar com curl** (copie o token do navegador, DevTools › Network › header `Authorization`):
 ```bash
-curl -H "Authorization: Bearer SEU_TOKEN" http://13.220.42.157:8080/avaliacoes
+curl -H "Authorization: Bearer SEU_TOKEN" http://13.220.42.157:8080/artigos
 ```
 O token da aba *Test* da API no Auth0 **não** passa pela Action, então vem sem roles e recebe 403.
 
@@ -662,7 +666,7 @@ O token da aba *Test* da API no Auth0 **não** passa pela Action, então vem sem
 
 ## 9. O que é igual e o que é diferente do professor
 
-**Igual:** pacotes `br.edu.insper.<projeto>` com a pasta da entidade (`avaliacao/`) e `config/`; Lombok
+**Igual:** pacotes `br.edu.insper.<projeto>` com a pasta da entidade (`artigo/`) e `config/`; Lombok
 `@Getter @Setter`; `@Autowired` nos campos; Controller → Service → Repository; `WebSecurityConfig` com
 `oauth2ResourceServer(jwt(Customizer.withDefaults()))`; roles lidas com `@AuthenticationPrincipal Jwt jwt` e
 `jwt.getClaimAsStringList(".../roles")`; PostgreSQL `postgres-aula` na rede `rede`; Dockerfile em 2 estágios

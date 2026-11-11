@@ -1,4 +1,4 @@
-package br.edu.insper.avaliacoes.avaliacao;
+package br.edu.insper.artigos.artigo;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,15 +15,15 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @Setter
-public class Avaliacao {
+public class Artigo {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
-    private String emailAvaliador;      // o servidor preenche (email do token)
-    private String emailAvaliado;
+    private String titulo;
     @Column(length = 1000)
-    private String comentarios;
-    private Integer nota;               // 0 a 10
-    private LocalDateTime dataAvaliacao; // o servidor preenche (agora)
+    private String descricao;
+    private String prioridade;         // BAIXA, MEDIA ou ALTA
+    private String emailUsuario;       // o servidor preenche (email do token de quem criou)
+    private LocalDateTime dataCriacao; // o servidor preenche (agora)
 }
