@@ -19,7 +19,13 @@ name: Deploy backend na AWS
 on:
   push:
     branches: [main]
+    paths-ignore: ["**.md"]   # mudar só o README não faz deploy
   workflow_dispatch:
+    inputs:
+      apagar_banco:
+        description: "Apagar o banco antes de subir (use quando mudar os campos da entidade)"
+        type: boolean
+        default: false
 
 # ⭐ Nome da imagem no Docker Hub, nome do container e portas (docker run -p 8080:8000)
 env:
@@ -38,6 +44,7 @@ jobs:
       EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
       AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
       AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+      APAGAR_BANCO: ${{ inputs.apagar_banco || false }}
 
     steps:
       - name: Baixar o código
@@ -90,6 +97,10 @@ jobs:
             docker logout
 
             docker rm -f $CONTAINER 2>/dev/null || true
+            if [ "$APAGAR_BANCO" = "true" ]; then
+              echo "Apagando o banco (volume api-data)..."
+              docker volume rm api-data 2>/dev/null || true
+            fi
             docker run -d --name $CONTAINER --restart unless-stopped \
               -p $PORTA_EXTERNA:$PORTA_INTERNA \
               -v api-data:/data \
