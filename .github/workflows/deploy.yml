@@ -1,0 +1,101 @@
+# Deploy do backend na EC2 a cada push na main (ou manual em Actions > Run workflow).
+#
+# Como funciona (sem Docker Hub):
+#   1. faz o build da imagem no runner do GitHub
+#   2. manda a imagem para a EC2 via SSH (docker save | docker load)
+#   3. recria o container com o docker run pedido
+#
+# Secrets necessários (Settings > Secrets and variables > Actions):
+#   EC2_HOST        IP da máquina (ex.: 13.220.42.157)
+#   EC2_SSH_KEY     conteúdo INTEIRO do arquivo .pem
+#   AUTH0_DOMAIN    ex.: dev-xxxx.us.auth0.com
+#   AUTH0_AUDIENCE  ex.: https://avaliacoes-api
+#   EC2_USER        (opcional, padrão: ubuntu)
+
+name: Deploy backend na AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# ⭐ Nome da imagem/container e portas (docker run -p 8080:8000)
+env:
+  IMAGE: api-avaliacoes:latest
+  CONTAINER: api
+  PORTA_EXTERNA: "8080"
+  PORTA_INTERNA: "8000"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+      AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
+      AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v5
+
+      - name: Conferir secrets
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          faltando=""
+          [ -z "$EC2_HOST" ] && faltando="$faltando EC2_HOST"
+          [ -z "$EC2_SSH_KEY" ] && faltando="$faltando EC2_SSH_KEY"
+          [ -z "$AUTH0_DOMAIN" ] && faltando="$faltando AUTH0_DOMAIN"
+          [ -z "$AUTH0_AUDIENCE" ] && faltando="$faltando AUTH0_AUDIENCE"
+          if [ -n "$faltando" ]; then echo "::error::Secrets faltando:$faltando"; exit 1; fi
+
+      - name: Build da imagem Docker
+        run: docker build -t "$IMAGE" .
+
+      - name: Configurar SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2.pem
+          chmod 600 ~/.ssh/ec2.pem
+          cat > ~/.ssh/config <<EOF
+          Host ec2
+            HostName $EC2_HOST
+            User $EC2_USER
+            IdentityFile ~/.ssh/ec2.pem
+            StrictHostKeyChecking no
+            ServerAliveInterval 30
+          EOF
+
+      - name: Enviar a imagem para a EC2
+        run: docker save "$IMAGE" | gzip | ssh ec2 'gunzip | docker load'
+
+      - name: Subir o container
+        run: |
+          ssh ec2 bash -s <<EOF
+            set -e
+            docker rm -f $CONTAINER 2>/dev/null || true
+            docker run -d --name $CONTAINER --restart unless-stopped \
+              -p $PORTA_EXTERNA:$PORTA_INTERNA \
+              -v api-data:/data \
+              -e AUTH0_DOMAIN="$AUTH0_DOMAIN" \
+              -e AUTH0_AUDIENCE="$AUTH0_AUDIENCE" \
+              $IMAGE
+            docker image prune -f
+          EOF
+
+      - name: Verificar se a API subiu
+        run: |
+          ssh ec2 bash -s <<EOF
+            for i in \$(seq 1 20); do
+              if curl -fsS http://localhost:$PORTA_EXTERNA/health; then
+                echo; echo "API no ar: http://$EC2_HOST:$PORTA_EXTERNA/docs"; exit 0
+              fi
+              sleep 2
+            done
+            echo "A API não respondeu. Logs do container:"
+            docker logs --tail 80 $CONTAINER
+            exit 1
+          EOF

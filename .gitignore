@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Banco local e variáveis
+*.db
+.env
+
+# Chaves (NUNCA subir)
+*.pem
+
+# Arquivos do agente / notas internas
+.claude/
+docs/
+specs/
+plans/
+notes/
+
+.DS_Store
